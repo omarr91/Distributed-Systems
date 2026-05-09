@@ -1,17 +1,28 @@
 import asyncio
 import os
-import random
+import time
 from typing import Any
 
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+import requests
 from fastapi import FastAPI
 from pydantic import BaseModel, root_validator
 
 
+MODEL_NAME = "google/gemma-4-26B-A4B-it-assistant"
+DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model     = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME,
+    torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+    device_map="auto"   # automatically spreads across available GPUs
+)
+
 app = FastAPI(title="Simulated GPU Worker")
 
 WORKER_NAME = os.getenv("WORKER_NAME", "worker")
-MIN_PROCESSING_SECONDS = float(os.getenv("MIN_PROCESSING_SECONDS", "1"))
-MAX_PROCESSING_SECONDS = float(os.getenv("MAX_PROCESSING_SECONDS", "3"))
 active_requests = 0
 completed_requests = 0
 load_lock = asyncio.Lock()
@@ -67,16 +78,36 @@ async def process_task(prompt: str) -> dict[str, Any]:
     async with load_lock:
         active_requests += 1
 
-    processing_time = random.uniform(MIN_PROCESSING_SECONDS, MAX_PROCESSING_SECONDS)
+    started_at = time.perf_counter()
     try:
-        await asyncio.sleep(processing_time)
+        model_response = await asyncio.to_thread(query, prompt)
+        processing_time = time.perf_counter() - started_at
 
         return {
             "worker": WORKER_NAME,
+            "model": MODEL_NAME,
             "processing_time": round(processing_time, 2),
-            "result": f"Processed: {prompt}",
+            "result": model_response,
         }
     finally:
         async with load_lock:
             active_requests = max(0, active_requests - 1)
             completed_requests += 1
+
+
+def query(prompt: str, max_new_tokens: int = 512) -> str:
+    inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
+
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    # Decode only the newly generated tokens, not the prompt
+    new_tokens = outputs[0][inputs["input_ids"].shape[-1]:]
+    return tokenizer.decode(new_tokens, skip_special_tokens=True)

@@ -1,42 +1,43 @@
 param(
-    [int]$WorkerCount = 5,
-    [int]$MasterCount = 2,
-    [string]$NetworkName = "distributed-ai-network",
-    [switch]$RemoveNetwork
+    [string]$NginxExePath = "nginx.exe",
+    [string]$NginxWorkingDirectory = "",
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
 
-$containers = @("distributed-ai-nginx")
+Write-Host "Stopping local master node process(es)"
+Get-CimInstance Win32_Process |
+    Where-Object {
+        $_.CommandLine -like "*uvicorn master:app*" -and
+        $_.CommandLine -notlike "*Where-Object*"
+    } |
+    ForEach-Object {
+        Write-Host "Stopping master process PID $($_.ProcessId)"
+        Stop-Process -Id $_.ProcessId -Force
+    }
 
-for ($i = 1; $i -le $MasterCount; $i++) {
-    $containers += "distributed-ai-master$i"
+$stopOptions = @{
+    FilePath = $NginxExePath
+    ArgumentList = @("-s", "stop")
+    Wait = $true
 }
 
-for ($i = 1; $i -le $WorkerCount; $i++) {
-    $containers += "distributed-ai-worker$i"
+if ($NginxWorkingDirectory) {
+    $stopOptions.WorkingDirectory = $NginxWorkingDirectory
 }
 
-foreach ($containerName in $containers) {
-    $existingContainer = docker ps -aq --filter "name=^/$containerName$"
-    if ($existingContainer) {
-        Write-Host "Removing container: $containerName"
-        docker rm -f $containerName | Out-Null
+try {
+    Write-Host "Stopping local NGINX: $NginxExePath -s stop"
+    Start-Process @stopOptions
+}
+catch {
+    if (-not $Force) {
+        throw
     }
-    else {
-        Write-Host "Container not found: $containerName"
-    }
+
+    Write-Host "Graceful NGINX stop failed. Force-stopping nginx processes."
+    Get-Process nginx -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
-if ($RemoveNetwork) {
-    $existingNetwork = docker network ls --filter "name=^$NetworkName$" --format "{{.Name}}"
-    if ($existingNetwork) {
-        Write-Host "Removing Docker network: $NetworkName"
-        docker network rm $NetworkName | Out-Null
-    }
-    else {
-        Write-Host "Docker network not found: $NetworkName"
-    }
-}
-
-Write-Host "Cluster containers stopped."
+Write-Host "Local master/NGINX processes stopped."
