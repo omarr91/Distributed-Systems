@@ -42,7 +42,7 @@ foreach ($port in $MasterPorts) {
         -ArgumentList @(
             "-NoExit",
             "-Command",
-            "uvicorn master:app --port $port"
+            "python -m uvicorn master:app --port $port"
         )
 }
 
