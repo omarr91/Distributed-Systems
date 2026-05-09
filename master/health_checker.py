@@ -3,7 +3,7 @@ import logging
 
 import requests
 
-from Scheduler import WorkerRegistry
+from scheduler import WorkerRegistry
 
 
 logger = logging.getLogger("master.health_checker")

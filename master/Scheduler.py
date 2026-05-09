@@ -1,10 +1,16 @@
 import copy
 import logging
+import os
 import threading
 from typing import Any
 
 
 logger = logging.getLogger("master.scheduler")
+
+ROUND_ROBIN = "round_robin"
+LEAST_LOADED = "least_loaded"
+LOAD_AWARE = "load_aware"
+SUPPORTED_STRATEGIES = {ROUND_ROBIN, LEAST_LOADED, LOAD_AWARE}
 
 
 DEFAULT_WORKERS: dict[str, dict[str, Any]] = {
@@ -46,12 +52,39 @@ DEFAULT_WORKERS: dict[str, dict[str, Any]] = {
 }
 
 
+def load_workers_from_env() -> dict[str, dict[str, Any]]:
+    worker_urls = os.getenv("WORKER_URLS")
+    if not worker_urls:
+        return DEFAULT_WORKERS
+
+    workers: dict[str, dict[str, Any]] = {}
+    for worker_definition in worker_urls.split(","):
+        name, url = worker_definition.split("=", 1)
+        workers[name.strip()] = {
+            "url": url.strip(),
+            "active_requests": 0,
+            "worker_active_requests": 0,
+            "completed_requests": 0,
+            "healthy": True,
+        }
+
+    return workers
+
+
 class WorkerRegistry:
-    def __init__(self, workers: dict[str, dict[str, Any]]) -> None:
+    def __init__(self, workers: dict[str, dict[str, Any]], strategy: str = LOAD_AWARE) -> None:
+        if strategy not in SUPPORTED_STRATEGIES:
+            raise ValueError(
+                f"Unsupported scheduler strategy '{strategy}'. "
+                f"Use one of: {', '.join(sorted(SUPPORTED_STRATEGIES))}"
+            )
+
         self._workers = copy.deepcopy(workers)
         self._lock = threading.RLock()
+        self._strategy = strategy
+        self._round_robin_index = 0
 
-    def select_least_loaded(self, exclude: set[str] | None = None) -> str | None:
+    def select_worker(self, exclude: set[str] | None = None) -> str | None:
         exclude = exclude or set()
         with self._lock:
             healthy_workers = [
@@ -63,14 +96,44 @@ class WorkerRegistry:
             if not healthy_workers:
                 return None
 
-            # Load-aware scheduling: prefer real worker-reported load, while accounting
-            # for this master's in-flight requests between status refreshes.
-            selected = min(
+            selected = self._select_worker(healthy_workers)
+            logger.debug(
+                "Selected worker %s using %s from candidates %s",
+                selected,
+                self._strategy,
                 healthy_workers,
-                key=lambda name: self._effective_load(name),
             )
-            logger.debug("Selected worker %s from candidates %s", selected, healthy_workers)
             return selected
+
+    def select_least_loaded(self, exclude: set[str] | None = None) -> str | None:
+        return self.select_worker(exclude=exclude)
+
+    def _select_worker(self, healthy_workers: list[str]) -> str:
+        if self._strategy == ROUND_ROBIN:
+            return self._select_round_robin(healthy_workers)
+
+        if self._strategy == LEAST_LOADED:
+            return min(
+                healthy_workers,
+                key=lambda name: self._workers[name]["active_requests"],
+            )
+
+        return min(
+            healthy_workers,
+            key=lambda name: self._effective_load(name),
+        )
+
+    def _select_round_robin(self, healthy_workers: list[str]) -> str:
+        worker_names = list(self._workers.keys())
+
+        for offset in range(len(worker_names)):
+            index = (self._round_robin_index + offset) % len(worker_names)
+            worker_name = worker_names[index]
+            if worker_name in healthy_workers:
+                self._round_robin_index = (index + 1) % len(worker_names)
+                return worker_name
+
+        return healthy_workers[0]
 
     def get_worker_url(self, worker_name: str) -> str:
         with self._lock:
@@ -131,6 +194,14 @@ class WorkerRegistry:
                 worker["effective_load"] = self._effective_load(worker_name)
             return snapshot
 
+    def scheduler_info(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "strategy": self._strategy,
+                "supported_strategies": sorted(SUPPORTED_STRATEGIES),
+            }
+
 
 def create_default_registry() -> WorkerRegistry:
-    return WorkerRegistry(DEFAULT_WORKERS)
+    strategy = os.getenv("SCHEDULER_STRATEGY", LOAD_AWARE)
+    return WorkerRegistry(load_workers_from_env(), strategy=strategy)

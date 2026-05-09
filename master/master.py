@@ -6,8 +6,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from HealthChecker import start_health_checker
-from Scheduler import WorkerRegistry, create_default_registry
+from health_checker import start_health_checker
+from scheduler import WorkerRegistry, create_default_registry
 
 
 logging.basicConfig(
@@ -39,7 +39,10 @@ async def health() -> dict[str, str]:
 
 @app.get("/workers")
 async def workers() -> dict[str, Any]:
-    return registry.snapshot()
+    return {
+        "scheduler": registry.scheduler_info(),
+        "workers": registry.snapshot(),
+    }
 
 
 @app.post("/query")
@@ -52,7 +55,7 @@ async def dispatch_query(query: str) -> dict[str, Any]:
     failed_workers: set[str] = set()
 
     while True:
-        selected_worker = registry.select_least_loaded(exclude=failed_workers)
+        selected_worker = registry.select_worker(exclude=failed_workers)
         if selected_worker is None:
             logger.warning("No healthy workers available for request")
             raise HTTPException(status_code=503, detail="No healthy workers available")
