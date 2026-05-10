@@ -21,13 +21,13 @@ def create_instance():
     return response
 
 def delete_instance(id):
-    response = requests.post(f"https://api.thundercompute.com:8443/v1/instances/{id}/delete",id,headers={"Authorization":"Bearer "+api_key,"Content-type":"application/json"})
+    response = requests.post(f"https://api.thundercompute.com:8443/v1/instances/{id}/delete",headers={"Authorization":"Bearer "+api_key,"Content-type":"application/json"})
     if response.status_code == 200:
         return True
     return False
 
 def add_instance_port(id,portnum):
-    response = requests.post(f"https://api.thundercompute.com:8443/v1/instances/{id}/modify",id,headers={"Authorization":"Bearer "+api_key,"Content-type":"application/json"},json={"add_ports":[portnum]})
+    response = requests.post(f"https://api.thundercompute.com:8443/v1/instances/{id}/modify",headers={"Authorization":"Bearer "+api_key,"Content-type":"application/json"},json={"add_ports":[portnum]})
     if response.status_code == 200:
         return True
     return False

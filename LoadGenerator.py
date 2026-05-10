@@ -4,11 +4,41 @@ import threading
 import time
 from queue import Queue
 from Models import Request
+import requests
+import random
 
+
+TEST_QUERIES = [
+    "What is the capital of France?",
+    "Explain quantum computing in simple terms.",
+    "Write a short poem about the ocean.",
+    "What are the main causes of climate change?",
+    "How does a neural network learn?",
+    "What is the difference between Python and JavaScript?",
+    "Summarize the history of the Roman Empire.",
+    "What is machine learning?",
+    "How do black holes form?",
+    "Write a haiku about autumn.",
+    "What are the benefits of exercise?",
+    "Explain the theory of relativity.",
+    "What is the meaning of life?",
+    "How does the internet work?",
+    "What is the difference between AI and machine learning?",
+    "Write a short story about a robot.",
+    "What are the planets in our solar system?",
+    "How do vaccines work?",
+    "What is blockchain technology?",
+    "Explain recursion in programming.",
+    "What is the fastest animal on Earth?",
+    "How does photosynthesis work?",
+    "What is the difference between RAM and ROM?",
+    "Write a joke about programmers.",
+    "What caused World War I?",
+]
 
 def simulate_user(scheduler, user_id, result_list=None):
-    request = Request(id=user_id, query=f"Query {user_id}")
-    response = scheduler.handle_request(request)
+    query = random.choice(TEST_QUERIES)
+    response = requests.post("http://127.0.0.1/query",json={"query":query})
     if(result_list != None):
         result_list.put(response)
         return

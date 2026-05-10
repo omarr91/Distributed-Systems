@@ -52,16 +52,22 @@ DEFAULT_WORKERS: dict[str, dict[str, Any]] = {
 }
 
 
-def load_workers_from_env() -> dict[str, dict[str, Any]]:
-    worker_urls = os.getenv("WORKER_URLS")
-    if not worker_urls:
+def load_workers_from_file() -> dict[str, dict[str, Any]]:
+    if not os.path.exists("workers_urls.txt"):
         return DEFAULT_WORKERS
+    worker_urls = ""
+    with open("workers_urls.txt",'r') as f:
+        worker_urls = f.read()
+        f.close()
 
     workers: dict[str, dict[str, Any]] = {}
-    for worker_definition in worker_urls.split(","):
-        name, url = worker_definition.split("=", 1)
-        workers[name.strip()] = {
-            "url": url.strip(),
+    for i, url in enumerate(worker_urls.split(","), start=1):
+        url = url.strip()
+        if not url:
+            continue
+        name = f"worker{i}"
+        workers[name] = {
+            "url": url,
             "active_requests": 0,
             "worker_active_requests": 0,
             "completed_requests": 0,
@@ -204,4 +210,4 @@ class WorkerRegistry:
 
 def create_default_registry() -> WorkerRegistry:
     strategy = os.getenv("SCHEDULER_STRATEGY", LOAD_AWARE)
-    return WorkerRegistry(load_workers_from_env(), strategy=strategy)
+    return WorkerRegistry(load_workers_from_file(), strategy=strategy)
