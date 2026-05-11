@@ -7,7 +7,5 @@ class Request:
 
 @dataclass
 class Response:
-    id: int
-    worker_id: int
-    result: str
-    latency: float
+    selected_worker: str
+    worker_response: dict

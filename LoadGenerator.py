@@ -3,9 +3,14 @@
 import threading
 import time
 from queue import Queue
-from Models import Request
 import requests
 import random
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-u",default=1,help="Number of concurrent users.")
+args = parser.parse_args()
+
 
 
 TEST_QUERIES = [
@@ -36,7 +41,7 @@ TEST_QUERIES = [
     "What caused World War I?",
 ]
 
-def simulate_user(scheduler, user_id, result_list=None):
+def simulate_user(user_id, result_list=None):
     query = random.choice(TEST_QUERIES)
     response = requests.post("http://127.0.0.1/query",json={"query":query})
     if(result_list != None):
@@ -44,14 +49,14 @@ def simulate_user(scheduler, user_id, result_list=None):
         return
     return response
 
-def run_load_test(scheduler, num_users=1000):
+def run_load_test(num_users):
     threads = []
     collected = Queue()
 
     start_time = time.time()
 
     for i in range(num_users):
-        t = threading.Thread(target=simulate_user, args=(scheduler, i,collected))
+        t = threading.Thread(target=simulate_user, args=(i,collected))
         threads.append(t)
         t.start()
 
@@ -63,16 +68,14 @@ def run_load_test(scheduler, num_users=1000):
     while not collected.empty():
         results.append(collected.get())
 
-    throughput = len(results) / (end_time - start_time)
+    total_time = 0
+    for z in results:
+        total_time += results[z]["worker_response"]["processing_time"]
 
-    workers_ids = set()
-    for i in range(len(results)):
-        workers_ids.add(results[i]["worker_id"])
-    
-    num_of_workers = len(workers_ids)
-    avg_latency = 0
-    for i in range(len(results)): avg_latency += results[i]["latency"]
+    throughput = len(results) / (total_time)
+    avg_latency = total_time / len(results)
 
-    avg_latency = avg_latency / len(results)
+    print(f"Number of users: {num_users}\t\tAverage Latency: {avg_latency:.3f}\t\tThroughput: {throughput:.3f}\t\t")
 
-    print(f"Average Latency: {avg_latency:.3f}\t\tThroughput: {throughput:.3f}\t\tNumber of Workers: {num_of_workers}")
+
+run_load_test(args.u)
