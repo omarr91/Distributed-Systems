@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, model_validator
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-MODEL_NAME = "distilgpt2"  
+MODEL_NAME = "facebook/opt-125m"  
 DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
 
 tokenizer = None
@@ -101,7 +101,7 @@ async def process_task(prompt: str) -> dict[str, Any]:
             completed_requests += 1
 
 
-def run_inference(prompt: str, max_new_tokens: int = 512) -> str:
+def run_inference(prompt: str, max_new_tokens: int = 32) -> str:
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
 
     with torch.no_grad():

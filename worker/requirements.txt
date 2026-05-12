@@ -1,7 +1,6 @@
 fastapi
 uvicorn
-requests
 transformers
-torch
 accelerate
-contextlib
+httpx
+pydantic

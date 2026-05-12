@@ -1,11 +1,13 @@
 param(
     [int[]]$MasterPorts = @(9001, 9002),
-    [string]$WorkerUrls = "",
+    [int]$WorkerCount = 7,
+    [int]$WorkerStartPort = 8001,
+    [string]$WorkerImage = "worker-image",
     [string]$NginxImage = "nginx:latest",
     [string]$NginxConfigPath = ".\nginx\nginx.conf",
     [string]$MasterImage = "master-image",
     [ValidateSet("round_robin", "least_loaded", "load_aware")]
-    [string]$SchedulerStrategy = "round_robin",
+    [string]$SchedulerStrategy = "load_aware",
     [string]$NetworkName = "distributed-ai-network"
 )
 
@@ -14,6 +16,7 @@ $ErrorActionPreference = "Stop"
 $RootDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $MasterDir = Join-Path $RootDir "master"
 $NginxDir  = Join-Path $RootDir "nginx"
+$WorkerDir = Join-Path $RootDir "worker"
 
 # ── Network ───────────────────────────────────────────────────────────────
 
@@ -24,6 +27,55 @@ if (-not $existingNetwork) {
     if ($LASTEXITCODE -ne 0) { throw "Failed to create Docker network" }
 }
 
+# ── Workers ──────────────────────────────────────────────────────────
+$WorkerPorts = @()
+
+for ($i = 0; $i -lt $WorkerCount; $i++) {
+    $WorkerPorts += ($WorkerStartPort + $i)
+}
+
+Write-Host "Building worker image: $WorkerImage"
+
+docker build -t $WorkerImage $WorkerDir
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Worker docker build failed"
+}
+
+foreach ($port in $WorkerPorts) {
+
+    $containerName = "distributed-ai-worker-$port"
+
+    $existing = docker ps -aq --filter "name=^/${containerName}$"
+
+    if ($existing) {
+        Write-Host "Removing existing worker container: $containerName"
+        docker rm -f $containerName | Out-Null
+    }
+
+    Write-Host "Starting worker on http://localhost:$port"
+
+    docker run -d `
+        --name $containerName `
+        --network $NetworkName `
+        --gpus all `
+        -p "${port}:8000" `
+        -e "WORKER_NAME=worker-$port" `
+        $WorkerImage | Out-Null
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start worker on port $port"
+    }
+}
+
+$ComputedWorkerUrls = ""
+for ($i = 0; $i -lt $WorkerPorts.Count; $i++) {
+    $port = $WorkerPorts[$i]
+    if ($i -gt 0) { $ComputedWorkerUrls += "," }
+    $ComputedWorkerUrls += "http://distributed-ai-worker-${port}:8000"
+}
+
+Write-Host $ComputedWorkerUrls
 # ── Master nodes ──────────────────────────────────────────────────────────
 
 Write-Host "Building master image: $MasterImage"
@@ -45,6 +97,7 @@ foreach ($port in $MasterPorts) {
         --network $NetworkName `
         -p "${port}:8000" `
         -e "SCHEDULER_STRATEGY=$SchedulerStrategy" `
+        -e "WORKER_URLS=$ComputedWorkerUrls" `
         $MasterImage | Out-Null
 
     if ($LASTEXITCODE -ne 0) { throw "Failed to start master on port $port" }
@@ -92,6 +145,11 @@ Write-Host "Scheduler strategy: $SchedulerStrategy"
 Write-Host ""
 Write-Host "Masters:"
 foreach ($port in $MasterPorts) {
+    Write-Host "  http://localhost:$port"
+}
+Write-Host ""
+Write-Host "Workers:"
+foreach ($port in $WorkerPorts) {
     Write-Host "  http://localhost:$port"
 }
 Write-Host "Nginx:   http://localhost:80"

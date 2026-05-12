@@ -9,7 +9,10 @@ $ErrorActionPreference = "Stop"
 # ── Helper ────────────────────────────────────────────────────────────────
 
 function Remove-Container {
-    param([string]$Name)
+    param(
+        [string]$Name,
+        [switch]$Force
+    )
     $existing = docker ps -aq --filter "name=^/${Name}$"
     if ($existing) {
         Write-Host "Stopping and removing container: $Name"
@@ -25,24 +28,24 @@ function Remove-Container {
 
 # ── Stop nginx ────────────────────────────────────────────────────────────
 
-Remove-Container "distributed-ai-nginx"
+Remove-Container "distributed-ai-nginx" -Force:$Force
 
 # ── Stop master containers ────────────────────────────────────────────────
 
 foreach ($port in $MasterPorts) {
-    Remove-Container "distributed-ai-master-$port"
+    Remove-Container "distributed-ai-master-$port" -Force:$Force
 }
 
 # ── Stop worker containers (local ones if any) ────────────────────────────
 
-$workerContainers = docker ps -aq --filter "name=^/distributed-ai-worker"
-if ($workerContainers) {
+$workerContainers = @(docker ps -aq --filter "name=distributed-ai-worker")
+if ($workerContainers.Count -gt 0) {
     Write-Host "Stopping and removing worker containers..."
     $workerContainers | ForEach-Object {
-        $name = docker inspect --format "{{.Name}}" $_ | TrimStart("/")
+        $name = (docker inspect --format "{{.Name}}" $_).TrimStart("/")
         Write-Host "  Removing worker container: $name"
+        docker rm -f $_ | Out-Null
     }
-    docker rm -f ($workerContainers -join " ") | Out-Null
 } else {
     Write-Host "No worker containers found, skipping."
 }

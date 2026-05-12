@@ -11,11 +11,11 @@ def list_instances():
 
 def create_instance():
     response = requests.post("https://api.thundercompute.com:8443/v1/instances/create",headers={"Authorization":"Bearer "+api_key,"Content-type":"application/json"},
-                             json={"cpu_cores":4,
+                             json={"cpu_cores":8,
                                    "disk_size_gb":100,
-                                   "gpu_type":"A6000",
+                                   "gpu_type":"L40",
                                    "mode":"prototyping",
-                                   "num_gpus":1,
+                                   "num_gpus":2,
                                    "template":"ollama"
                                    })
     return response
@@ -31,3 +31,5 @@ def add_instance_port(id,portnum):
     if response.status_code == 200:
         return True
     return False
+
+print(create_instance().text)
