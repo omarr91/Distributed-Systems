@@ -8,7 +8,7 @@ import torch
 from fastapi import FastAPI
 from pydantic import BaseModel, model_validator
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from RAG import retrieve
+# from RAG import retrieve
 
 MODEL_NAME = "facebook/opt-125m"  
 DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
@@ -103,17 +103,7 @@ async def process_task(prompt: str) -> dict[str, Any]:
 
 
 def run_inference(prompt: str, max_new_tokens: int = 32) -> str:
-    context = "\n".join(retrieve(prompt))
-
-    prompt = f"""
-    Answer the question using the context below.
-
-    Context:
-    {context}
-
-    Question:
-    {prompt}
-    """
+   
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
     
 

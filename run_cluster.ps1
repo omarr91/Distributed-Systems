@@ -1,6 +1,6 @@
 param(
     [int[]]$MasterPorts = @(9001, 9002),
-    [int]$WorkerCount = 7,
+    [int]$WorkerCount = 5,
     [int]$WorkerStartPort = 8001,
     [string]$WorkerImage = "worker-image",
     [string]$NginxImage = "nginx:latest",
